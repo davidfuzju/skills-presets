@@ -211,7 +211,30 @@ three states:
 | In a worktree named `ticket-<ref>*` | basename match | nothing to do |
 | In a worktree named anything else | basename mismatch | create a correctly named one, switch by `path`, remove the leftover |
 
-The third path is worth spelling out because two of its steps are counter-intuitive:
+The third case cannot be resolved automatically, and an earlier draft got this wrong by trying
+to: it created the correctly-named worktree, switched into it, and removed the leftover. That
+is safe only if the leftover is empty, and **a name cannot tell you whether it is**. A user who
+ticked the box, worked for an hour, and then typed `/implement #2` looks identical from the
+outside. Deciding for them destroys their working context.
+
+Git's own safety nets do not cover this, which was measured rather than assumed:
+
+| Leftover contains | `git worktree remove` without `--force` |
+| --- | --- |
+| Uncommitted or untracked changes | refuses |
+| Commits not on the default branch | **succeeds — the directory is deleted**; only `git branch -d` then refuses, so the commits survive but the working tree does not |
+| Only gitignored files (`.env`, `node_modules`, build output) | **succeeds silently** — git does not count them as dirty |
+
+That last row also broke the first attempt at a recommendation rule, which keyed off
+`git status --porcelain`. A worktree holding nothing but a `.env` full of secrets reports
+clean. "Tracked-clean" is not "nothing to lose".
+
+So the preflight now **measures three facts and hands the decision to the user**: uncommitted
+changes, unmerged commits, and gitignored file count. It offers stay / switch-and-keep /
+switch-and-remove, and only recommends removal when all three are empty. The hook computes the
+facts so the question put to the user is concrete rather than "what do you want to do".
+
+Two mechanics of the switch are worth recording:
 
 - **Creating with plain `git worktree add` yields the exact name.** The random 6-character
   suffix comes from `EnterWorktree`'s `name` parameter, not from git, so a worktree created
@@ -220,12 +243,15 @@ The third path is worth spelling out because two of its steps are counter-intuit
   a worktree session; the contract explicitly supports switching by `path` from inside one, and
   leaves the previous worktree on disk untouched.
 
-**The leftover has to be removed with git, not `ExitWorktree`.** `ExitWorktree` only ever
-operates on the worktree the session entered *last*, so after the switch it would target the
-new one. That opened a hole: `git worktree remove` bypassed the `ExitWorktree` deny entirely,
-which meant the keep-the-worktree guarantee had a back door. The `Bash` branch now denies
-`git worktree remove` for any path named `ticket-*`, while leaving other worktrees removable —
-which is exactly what lets the checkbox leftover be cleaned up.
+**Removal has to go through git, not `ExitWorktree`.** `ExitWorktree` only ever operates on the
+worktree the session entered *last*, so after a switch it would target the new one. That also
+exposed a hole: `git worktree remove` bypassed the `ExitWorktree` deny entirely, so the
+keep-the-worktree guarantee had a back door. The `Bash` branch now denies `git worktree remove`
+for any path named `ticket-*`, while leaving other worktrees removable — which is what allows
+an approved cleanup of the leftover.
+
+The simplest way to avoid all of this is documented in the README: leave the checkbox unchecked
+and let `/implement` create the worktree.
 
 Detection uses `git rev-parse --git-common-dir` rather than a path glob: it returns the literal
 `.git` in a main checkout and an absolute path to the main checkout's `.git` from inside any

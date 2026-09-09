@@ -78,6 +78,33 @@ worktree_name() {   # basename of the current worktree, empty if not in one
   basename "$(git rev-parse --show-toplevel 2>/dev/null)"
 }
 
+# Facts about the current worktree, so the preflight can ask the user a
+# concrete question instead of telling the model to go and judge for itself.
+wt_dirty() {
+  [ -n "$(git status --porcelain 2>/dev/null)" ] && echo yes || echo no
+}
+
+# Tracked-clean does NOT mean "nothing to lose": `git worktree remove` deletes
+# gitignored files (.env, node_modules, build output) without counting them as
+# dirty and without needing --force. Measured, not assumed.
+wt_ignored() {
+  # `grep -c` prints 0 *and* exits 1 on no match, so `|| echo 0` would emit "0\n0".
+  local n; n=$(git status --porcelain --ignored 2>/dev/null | grep -c '^!!') || true
+  printf '%s' "${n:-0}"
+}
+
+wt_commits() {   # commits on HEAD that are not on the default branch
+  local def
+  def=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) || def=""
+  if [ -z "$def" ]; then
+    for b in main master; do
+      git show-ref --verify --quiet "refs/heads/$b" && { def=$b; break; }
+    done
+  fi
+  [ -n "$def" ] || { echo unknown; return; }
+  git rev-list --count "$def..HEAD" 2>/dev/null || echo unknown
+}
+
 main_checkout() {
   local c; c=$(git rev-parse --git-common-dir 2>/dev/null) || return 0
   [ "$c" = ".git" ] && { git rev-parse --show-toplevel 2>/dev/null; return; }
@@ -102,11 +129,14 @@ preflight() { # $1=target JSON  $2=raw text  $3=hookEventName
     fi
     ref=$(ticket_ref "$text")
   fi
-  local wtname main matches=n/a
+  local wtname main matches=n/a dirty=n/a commits=n/a ignored=n/a
   wtname=$(worktree_name); main=$(main_checkout)
   if [ -n "$wtname" ]; then
     wt=yes
     case "$wtname" in ticket-"$ref"|ticket-"$ref"-*) matches=yes ;; *) matches=no ;; esac
+    if [ "$matches" = no ]; then
+      dirty=$(wt_dirty); commits=$(wt_commits); ignored=$(wt_ignored)
+    fi
   fi
 
   jq -n --arg r "$ref" --arg k "$kind" --arg p "$pol" --arg i "$id" \
@@ -115,6 +145,7 @@ preflight() { # $1=target JSON  $2=raw text  $3=hookEventName
   inject "$evt" "$(render "$ROOT/policy/$pol/implement-preflight.md" \
     '{{REF}}' "${ref:-unresolved}" '{{TRACKER}}' "$kind" '{{IN_WT}}' "$wt" \
     '{{WT_NAME}}' "${wtname:-none}" '{{WT_MATCHES}}' "$matches" \
+    '{{WT_DIRTY}}' "$dirty" '{{WT_COMMITS}}' "$commits" '{{WT_IGNORED}}' "$ignored" \
     '{{MAIN}}' "${main:-unknown}")"
 }
 

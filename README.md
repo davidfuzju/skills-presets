@@ -55,6 +55,18 @@ Works with or without the [rtk](https://github.com/rtkteam/rtk) proxy: rtk passe
 through untouched, and the rewrite regex tolerates an `rtk ` prefix either way, so no
 detection is needed.
 
+## Recommended session setup
+
+**Leave the new-session worktree checkbox unchecked.** Let `/implement` create the worktree
+itself: it gets a name carrying the ticket id, and there is nothing to reconcile.
+
+Ticking the box launches the session in `.claude/worktrees/<random-name>`, and from a name
+alone nothing can tell a freshly-created empty worktree apart from one the user has been
+working in for an hour. So when `/implement` finds itself in a worktree that is not named for
+the ticket, it measures what that worktree holds — uncommitted changes, unmerged commits, and
+gitignored files — presents the options, and waits. It never switches or removes anything on
+its own.
+
 ## Configuring it
 
 Everything under `policy/` is plain Markdown injected into the agent's context. Edit it to
