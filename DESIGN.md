@@ -190,7 +190,48 @@ worktree and claim a ticket. Verified behaviour, not a hypothetical:
 The lesson generalises to any target added later: **anything matched against free-form user
 text must require a syntactically distinctive form**, not a keyword.
 
-### 6.5 Everything else
+### 6.5 Sessions that start inside a worktree
+
+Claude Code's desktop app has a **worktree checkbox** on the new-session dialog. Ticking it
+launches the session already inside `.claude/worktrees/<random-name>`, which breaks the naming
+requirement in a quiet way: the worktree exists, so nothing looks wrong, but its name carries
+no ticket id.
+
+An earlier draft said only *"confirm the current worktree belongs to this ticket, and stop and
+ask if not"*. That is too soft to rely on — a model can talk itself into "the user ticked the
+box deliberately, so this is the worktree for this work" and carry on. Vague instructions to a
+model are the same class of defect as a vague regex.
+
+The preflight now computes the answer instead of asking the model to judge it, and branches on
+three states:
+
+| State | Detected by | Action |
+| --- | --- | --- |
+| Not in a worktree | `--git-common-dir` is the literal `.git` | `EnterWorktree` with `name` |
+| In a worktree named `ticket-<ref>*` | basename match | nothing to do |
+| In a worktree named anything else | basename mismatch | create a correctly named one, switch by `path`, remove the leftover |
+
+The third path is worth spelling out because two of its steps are counter-intuitive:
+
+- **Creating with plain `git worktree add` yields the exact name.** The random 6-character
+  suffix comes from `EnterWorktree`'s `name` parameter, not from git, so a worktree created
+  this way is exactly `ticket-11-add-login`.
+- **`EnterWorktree` with `path` is the only way in.** Creating by `name` fails while already in
+  a worktree session; the contract explicitly supports switching by `path` from inside one, and
+  leaves the previous worktree on disk untouched.
+
+**The leftover has to be removed with git, not `ExitWorktree`.** `ExitWorktree` only ever
+operates on the worktree the session entered *last*, so after the switch it would target the
+new one. That opened a hole: `git worktree remove` bypassed the `ExitWorktree` deny entirely,
+which meant the keep-the-worktree guarantee had a back door. The `Bash` branch now denies
+`git worktree remove` for any path named `ticket-*`, while leaving other worktrees removable —
+which is exactly what lets the checkbox leftover be cleaned up.
+
+Detection uses `git rev-parse --git-common-dir` rather than a path glob: it returns the literal
+`.git` in a main checkout and an absolute path to the main checkout's `.git` from inside any
+linked worktree, so worktrees created outside `.claude/worktrees/` are recognised too.
+
+### 6.6 Everything else
 
 | Item | Note |
 | --- | --- |

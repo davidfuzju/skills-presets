@@ -70,7 +70,19 @@ ticket_ref() {
     <<<"$1" | head -1 | tr -d ' #'
 }
 
-in_worktree() { [[ "$PWD" == */.claude/worktrees/* ]]; }
+# In a linked worktree, --git-common-dir is an absolute path to the main
+# checkout's .git; in the main checkout it is the literal ".git".
+worktree_name() {   # basename of the current worktree, empty if not in one
+  local c; c=$(git rev-parse --git-common-dir 2>/dev/null) || return 0
+  [ "$c" = ".git" ] && return 0
+  basename "$(git rev-parse --show-toplevel 2>/dev/null)"
+}
+
+main_checkout() {
+  local c; c=$(git rev-parse --git-common-dir 2>/dev/null) || return 0
+  [ "$c" = ".git" ] && { git rev-parse --show-toplevel 2>/dev/null; return; }
+  dirname "$c"
+}
 
 # --- preflight -------------------------------------------------------------
 
@@ -90,13 +102,20 @@ preflight() { # $1=target JSON  $2=raw text  $3=hookEventName
     fi
     ref=$(ticket_ref "$text")
   fi
-  in_worktree && wt=yes
+  local wtname main matches=n/a
+  wtname=$(worktree_name); main=$(main_checkout)
+  if [ -n "$wtname" ]; then
+    wt=yes
+    case "$wtname" in ticket-"$ref"|ticket-"$ref"-*) matches=yes ;; *) matches=no ;; esac
+  fi
 
   jq -n --arg r "$ref" --arg k "$kind" --arg p "$pol" --arg i "$id" \
     '{ref:$r,tracker:$k,policy:$p,target:$i,reminded:false}' > "$GATE"
 
   inject "$evt" "$(render "$ROOT/policy/$pol/implement-preflight.md" \
-    '{{REF}}' "${ref:-unresolved}" '{{TRACKER}}' "$kind" '{{IN_WT}}' "$wt")"
+    '{{REF}}' "${ref:-unresolved}" '{{TRACKER}}' "$kind" '{{IN_WT}}' "$wt" \
+    '{{WT_NAME}}' "${wtname:-none}" '{{WT_MATCHES}}' "$matches" \
+    '{{MAIN}}' "${main:-unknown}")"
 }
 
 # --- modes -----------------------------------------------------------------
@@ -118,6 +137,25 @@ case "$MODE" in
   bash)
     [ -f "$GATE" ] || exit 0                    # rule A: no target running, no effect
     cmd=$(jq -r '.tool_input.command // ""' <<<"$IN")
+
+    # Protect ticket worktrees from `git worktree remove`. The ExitWorktree deny
+    # does not cover this path, and ExitWorktree only ever tracks the worktree
+    # the session entered last -- so removing a stale one has to go through git.
+    # Non-ticket worktrees stay removable, which is what lets a session started
+    # with the worktree checkbox clean up its randomly-named leftover.
+    if grep -qE '(^|[;&|]+[[:space:]]*)(rtk +)?git +(-C +[^ ]+ +)?worktree +remove' <<<"$cmd"; then
+      tgt=$(printf '%s' "$cmd" | sed -E 's/.*worktree[[:space:]]+remove[[:space:]]+//')
+      while [ "${tgt#-}" != "$tgt" ]; do tgt=${tgt#* }; done
+      tgt=${tgt%% *}
+      case "$(basename "$tgt" 2>/dev/null)" in
+        ticket-*)
+          jq -n --arg t "$tgt" \
+            '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",
+              permissionDecisionReason:("skills-presets: ticket worktrees are kept by policy. Refusing to remove " + $t + ".")}}'
+          exit 0 ;;
+      esac
+    fi
+
     grep -qE -- '--no-ff|--squash|--abort|--continue' <<<"$cmd" && exit 0
     # A trailing space is appended so the subcommand matches as the literal
     # "merge " -- BSD sed (macOS) has no \b. The optional "(rtk +)?" group makes
