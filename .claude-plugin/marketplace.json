@@ -1,0 +1,14 @@
+{
+  "name": "skills-presets",
+  "owner": { "name": "David FU" },
+  "description": "A preset layer for third-party Claude Code skills.",
+  "plugins": [
+    {
+      "name": "skills-presets",
+      "source": "./",
+      "description": "Enforce your own workflow defaults on third-party skills without forking them.",
+      "category": "engineering",
+      "keywords": ["workflow", "worktree", "git", "hooks"]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "$comment": "Each target binds a skill invocation to a policy directory. Adding support for another third-party skill set is a data change: append an entry and create policy/<policy>/.",
+  "targets": [
+    {
+      "id": "mattpocock-skills/implement",
+      "match": "(^|[/:[:space:]])implement\\b",
+      "policy": "mattpocock-skills",
+      "requires_tracker": true,
+      "description": "mattpocock-skills /implement — ticket worktree, --no-ff merge, ticket lifecycle"
+    }
+  ]
+}
