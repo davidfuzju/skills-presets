@@ -45,7 +45,7 @@ hardcoded implementation could.
 ## Install
 
 ```bash
-claude plugin marketplace add <owner>/skills-presets
+claude plugin marketplace add davidfuzju/skills-presets
 claude plugin install skills-presets@skills-presets
 ```
 
