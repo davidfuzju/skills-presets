@@ -1,9 +1,10 @@
 {
-  "$comment": "Each target binds a skill invocation to a policy directory. Adding support for another third-party skill set is a data change: append an entry and create policy/<policy>/.",
+  "$comment": "Each target binds a skill invocation to a policy directory. Adding support for another third-party skill set is a data change: append an entry and create policy/<policy>/. match_prompt and match_skill are deliberately separate: a prompt is free text where a bare word like 'implement' appears constantly, while a skill name is a short controlled string.",
   "targets": [
     {
       "id": "mattpocock-skills/implement",
-      "match": "(^|[/:[:space:]])implement\\b",
+      "match_prompt": "(^|[[:space:]])/([a-z0-9-]+:)?implement([[:space:]]|$)",
+      "match_skill": "(^|:)implement$",
       "policy": "mattpocock-skills",
       "requires_tracker": true,
       "description": "mattpocock-skills /implement — ticket worktree, --no-ff merge, ticket lifecycle"

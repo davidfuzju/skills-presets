@@ -38,10 +38,15 @@ render() { # $1=template path, then placeholder/value pairs
 
 # --- target registry -------------------------------------------------------
 
-match_target() { # $1=text -> JSON of the first matching target, or empty
+# $1 = which pattern field to use, $2 = text to match against.
+# The two fields are separate on purpose: a prompt is free text where the bare
+# word "implement" appears all the time, so only the slash-command form counts,
+# whereas a skill name is a short controlled string.
+match_target() {
   # `. as $x` is required: the pipe into test() rebinds `.` to the string,
-  # so a bare `.match` inside select() would index the string, not the target.
-  jq -c --arg t "$1" 'first(.targets[] | . as $x | select($t | test($x.match)))' \
+  # so a bare `.match_prompt` inside select() would index the string.
+  jq -c --arg f "$1" --arg t "$2" \
+    'first(.targets[] | . as $x | select($x[$f] != null and ($t | test($x[$f]))))' \
     "$ROOT/targets.json" 2>/dev/null
 }
 
@@ -69,10 +74,8 @@ in_worktree() { [[ "$PWD" == */.claude/worktrees/* ]]; }
 
 # --- preflight -------------------------------------------------------------
 
-preflight() { # $1=raw text  $2=hookEventName
-  local tgt; tgt=$(match_target "$1")
-  [ -n "$tgt" ] || return 0
-
+preflight() { # $1=target JSON  $2=raw text  $3=hookEventName
+  local tgt=$1 text=$2 evt=$3
   local pol id needs_tracker
   pol=$(jq -r .policy <<<"$tgt")
   id=$(jq -r .id <<<"$tgt")
@@ -82,17 +85,17 @@ preflight() { # $1=raw text  $2=hookEventName
   if [ "$needs_tracker" = true ]; then
     kind=$(tracker_kind)
     if [ "$kind" = missing ]; then
-      inject "$2" "$(cat "$ROOT/policy/$pol/no-tracker.md")"
+      inject "$evt" "$(cat "$ROOT/policy/$pol/no-tracker.md")"
       return
     fi
-    ref=$(ticket_ref "$1")
+    ref=$(ticket_ref "$text")
   fi
   in_worktree && wt=yes
 
   jq -n --arg r "$ref" --arg k "$kind" --arg p "$pol" --arg i "$id" \
     '{ref:$r,tracker:$k,policy:$p,target:$i,reminded:false}' > "$GATE"
 
-  inject "$2" "$(render "$ROOT/policy/$pol/implement-preflight.md" \
+  inject "$evt" "$(render "$ROOT/policy/$pol/implement-preflight.md" \
     '{{REF}}' "${ref:-unresolved}" '{{TRACKER}}' "$kind" '{{IN_WT}}' "$wt")"
 }
 
@@ -100,13 +103,16 @@ preflight() { # $1=raw text  $2=hookEventName
 
 case "$MODE" in
   prompt)
-    preflight "$(jq -r '.prompt // ""' <<<"$IN")" UserPromptSubmit
+    text=$(jq -r '.prompt // ""' <<<"$IN")
+    tgt=$(match_target match_prompt "$text")
+    [ -n "$tgt" ] && preflight "$tgt" "$text" UserPromptSubmit
     ;;
 
   skill)
     s=$(jq -r '.tool_input.skill // ""' <<<"$IN")
     a=$(jq -r '.tool_input.args // ""' <<<"$IN")
-    [ -n "$(match_target "$s")" ] && preflight "$s $a" PreToolUse
+    tgt=$(match_target match_skill "$s")
+    [ -n "$tgt" ] && preflight "$tgt" "$s $a" PreToolUse
     ;;
 
   bash)

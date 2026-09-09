@@ -164,7 +164,33 @@ Two consequences worth knowing:
   upstream template documents the resolution (try `gh pr view`, fall back to `gh issue view`);
   this plugin does not reimplement it.
 
-### 6.4 Everything else
+### 6.4 Two matching surfaces need two patterns
+
+A target is matched against two very different inputs, and `targets.json` gives each its own
+pattern for that reason:
+
+| Field | Matched against | Why it differs |
+| --- | --- | --- |
+| `match_prompt` | the user's raw prompt — free text | the bare word "implement" turns up constantly in ordinary requests, so only the slash-command form may count |
+| `match_skill` | `tool_input.skill` — a short controlled name | anchored exactly, e.g. `implement` or `mattpocock-skills:implement` |
+
+Sharing one pattern across both looks tidy and is wrong. A single
+`(^|[/:[:space:]])implement\b` opened the gate on *"please implement this function"* and on
+any sentence containing the word, injecting a whole preflight that told the agent to create a
+worktree and claim a ticket. Verified behaviour, not a hypothetical:
+
+| Prompt | Before | After |
+| --- | --- | --- |
+| `/implement #11` | opens | opens |
+| `/mattpocock-skills:implement #11` | opens | opens |
+| `please implement this function` | **opens** | no match |
+| `we should implement caching` | **opens** | no match |
+| `reimplemented it` | no match | no match |
+
+The lesson generalises to any target added later: **anything matched against free-form user
+text must require a syntactically distinctive form**, not a keyword.
+
+### 6.5 Everything else
 
 | Item | Note |
 | --- | --- |

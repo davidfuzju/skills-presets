@@ -1,8 +1,18 @@
 {
   "name": "skills-presets",
   "description": "A preset layer for third-party Claude Code skills: enforce your own workflow defaults on skills you do not own, without forking them",
-  "version": "0.1.0",
-  "author": { "name": "David FU" },
-  "keywords": ["claude-code", "plugin", "hooks", "workflow", "worktree", "git", "skills"],
+  "version": "0.1.1",
+  "author": {
+    "name": "David FU"
+  },
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "hooks",
+    "workflow",
+    "worktree",
+    "git",
+    "skills"
+  ],
   "license": "MIT"
 }
