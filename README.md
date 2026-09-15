@@ -75,6 +75,7 @@ change the rules; no code changes needed.
 | File | Injected when |
 | --- | --- |
 | `policy/<target>/implement-preflight.md` | the target skill is invoked |
+| `policy/<target>/worktree-*.md` | inside the preflight, only the branch matching the current worktree |
 | `policy/<target>/implement-closeout.md` | the run stops (once per run) |
 | `policy/<target>/no-tracker.md` | the repo has no tracker configured |
 
