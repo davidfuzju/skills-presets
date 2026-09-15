@@ -169,9 +169,17 @@ preflight() { # $1=target JSON  $2=raw text  $3=hookEventName
   jq -n --arg r "$ref" --arg k "$kind" --arg p "$pol" --arg i "$id" --arg s "$started" \
     '{ref:$r,tracker:$k,policy:$p,target:$i,started_in_wt:$s,reminded:false}' > "$GATE"
 
+  # Inject only the worktree branch that applies: the mismatch branch is long
+  # and would otherwise sit in every run's context.
+  local step=worktree-enter
+  [ "$wt" = yes ] && { [ "$matches" = yes ] && step=worktree-ok || step=worktree-mismatch; }
+
+  # WORKTREE_STEP goes first so the fragment's own placeholders are filled by
+  # the pairs that follow.
   inject "$evt" "$(render "$ROOT/policy/$pol/implement-preflight.md" \
-    '{{REF}}' "${ref:-unresolved}" '{{TRACKER}}' "$kind" '{{IN_WT}}' "$wt" \
-    '{{WT_NAME}}' "${wtname:-none}" '{{WT_MATCHES}}' "$matches" \
+    '{{WORKTREE_STEP}}' "$(cat "$ROOT/policy/$pol/$step.md")" \
+    '{{REF}}' "${ref:-unresolved}" '{{TRACKER}}' "$kind" \
+    '{{WT_NAME}}' "${wtname:-none}" \
     '{{WT_DIRTY}}' "$dirty" '{{WT_COMMITS}}' "$commits" '{{WT_IGNORED}}' "$ignored" \
     '{{MAIN}}' "${main:-unknown}")"
 }

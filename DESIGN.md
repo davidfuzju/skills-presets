@@ -86,6 +86,7 @@ These notes record *why*, not *what* — duplicating source into docs guarantees
 | `hooks/dispatch.sh` | all logic, ~130 lines |
 | `targets.json` | target registry: which skill invocation maps to which policy directory |
 | `policy/<target>/implement-preflight.md` | injected when the target is invoked |
+| `policy/<target>/worktree-{enter,ok,mismatch}.md` | step 3 of the preflight; the hook injects only the one matching the measured worktree state |
 | `policy/<target>/implement-closeout.md` | the close-out: merge, close, keep — automatic, failures reported with a fix |
 | `policy/<target>/no-tracker.md` | shown when the repo has no tracker configured |
 
@@ -335,7 +336,7 @@ if not.
 
 | Item | Note |
 | --- | --- |
-| `additionalContext` size cap | 8000 characters (`systemMessage` 4000, `permissionDecisionReason` 2000) |
+| `additionalContext` size cap | 8000 characters (`systemMessage` 4000, `permissionDecisionReason` 2000). Injections are kept well under it: preflight ~1.2–2.3k depending on the worktree branch, close-out ~1.6k |
 | Hook process overhead | spawned on every Bash call, exits on the gate check |
 | Merging must run in the main checkout | the branch is occupied by the worktree, and a worktree-isolated session cannot reach the main checkout — see §6.6 for the `ExitWorktree` route; the main checkout must be clean |
 | Repeat merges | keeping the worktree means later work merges again, still with `--no-ff` |
