@@ -24,7 +24,7 @@ Adding another third-party skill is a data change: append an entry to
 
 | Target | Enforces |
 | --- | --- |
-| `mattpocock-skills` `/implement` | a worktree per ticket, ticket claim, automatic `--no-ff` merge at close-out, one confirmation before closing the ticket, kept worktrees |
+| `mattpocock-skills` `/implement` | a worktree per ticket, ticket claim, kept worktrees, and a close-out that merges (`--no-ff`) and closes the ticket automatically — anything that cannot complete is reported with a fix |
 
 ## Two design rules
 
@@ -87,6 +87,9 @@ change the rules; no code changes needed.
 - **Merges you type yourself are not covered.** Hooks only see the agent's tool calls. This is
   deliberate: `git config merge.ff false` would cover them, but changes behaviour outside the
   agent entirely.
+- **Sessions launched inside a worktree cannot merge for you.** Claude Code refuses any git
+  against the main checkout from a worktree-isolated session, and `ExitWorktree` only leaves a
+  worktree the session entered. Another reason to leave the new-session checkbox unchecked.
 - **The hook process still spawns on every Bash call.** Only the effect is gated, not the
   execution. The cost is one `bash` + `jq` that exits on its first line.
 

@@ -159,8 +159,15 @@ preflight() { # $1=target JSON  $2=raw text  $3=hookEventName
     fi
   fi
 
-  jq -n --arg r "$ref" --arg k "$kind" --arg p "$pol" --arg i "$id" \
-    '{ref:$r,tracker:$k,policy:$p,target:$i,reminded:false}' > "$GATE"
+  # started_in_wt is fixed by the *first* preflight of the session: both the
+  # prompt and skill branches can fire, and a later /implement after
+  # EnterWorktree must not overwrite it. Close-out relies on it to tell a
+  # worktree the session entered (ExitWorktree can leave it) from one the
+  # session was launched in (it cannot).
+  local started=$wt
+  [ -f "$GATE" ] && started=$(jq -r '.started_in_wt // empty' "$GATE") && [ -n "$started" ] || started=$wt
+  jq -n --arg r "$ref" --arg k "$kind" --arg p "$pol" --arg i "$id" --arg s "$started" \
+    '{ref:$r,tracker:$k,policy:$p,target:$i,started_in_wt:$s,reminded:false}' > "$GATE"
 
   inject "$evt" "$(render "$ROOT/policy/$pol/implement-preflight.md" \
     '{{REF}}' "${ref:-unresolved}" '{{TRACKER}}' "$kind" '{{IN_WT}}' "$wt" \
@@ -236,10 +243,19 @@ case "$MODE" in
     ref=$(jq -r .ref "$GATE"); kind=$(jq -r .tracker "$GATE"); pol=$(jq -r .policy "$GATE")
     jq '.reminded=true' "$GATE" > "$GATE.tmp" && mv "$GATE.tmp" "$GATE"
     main=$(main_checkout); def=$(default_branch)
+    # A worktree-isolated session is refused any git that targets the main
+    # checkout (`git -C` included) by Claude Code itself, not by a hook. The
+    # only way out is ExitWorktree, which works only for a worktree the session
+    # entered -- i.e. it started outside one and is inside one now.
+    route=hand-to-user; branch=unknown
+    if [ -n "$(worktree_name)" ]; then
+      branch=$(git branch --show-current 2>/dev/null)
+      [ "$(jq -r '.started_in_wt // "yes"' "$GATE")" = no ] && route=exit-worktree
+    fi
     inject Stop "$(render "$ROOT/policy/$pol/implement-closeout.md" \
       '{{REF}}' "$ref" '{{TRACKER}}' "$kind" '{{MAIN}}' "${main:-unknown}" \
-      '{{DEFAULT}}' "${def#origin/}" '{{BRANCH}}' "$(git branch --show-current 2>/dev/null)" \
-      '{{MAIN_READY}}' "$(main_ready "$main")")"
+      '{{DEFAULT}}' "${def#origin/}" '{{BRANCH}}' "${branch:-unknown}" \
+      '{{MAIN_READY}}' "$(main_ready "$main")" '{{ROUTE}}' "$route")"
     ;;
 
   cleanup)

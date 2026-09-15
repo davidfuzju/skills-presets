@@ -96,19 +96,24 @@ ticket worktrees and does not apply to the leftover being cleaned up here.
 
 ### At close-out
 
-Only once the full test suite passes and `/code-review` has run:
+Only once the full test suite passes and `/code-review` has run. **The user has authorized
+all three steps in advance — do not ask.** Stop at the first failure, and end with a summary
+plus, if anything did not complete, a *Needs attention* section: what failed, the error
+verbatim, and a concrete fix (paste-ready command where possible).
 
-1. **Merge without asking**, if the preconditions hold:
-   `git -C {{MAIN}} merge --no-ff <current-branch>`
-   Preconditions: `git -C {{MAIN}} status --porcelain` prints nothing, and the main checkout
-   is on the default branch. **Judge by whether the output is empty, do not parse individual
-   lines** (with the rtk proxy installed this command is rewritten to
-   `rtk git status --porcelain`). If a precondition fails, report it and give the user the
-   command; never work around it. On a conflict, `merge --abort` and report. **Never push.**
-   This `git -C` merge is the one main-checkout operation this policy sanctions from a
-   worktree session — run it from the worktree directory, do not `cd` there.
-2. **Ask once, then close** ticket {{REF}}: show what the **Resolve** convention in
-   `docs/agents/issue-tracker.md` would do (comment, close, any follow-up it requires) and wait
-   for one yes. Tracker writes are visible to others and cannot be taken back.
-3. **Keep** the worktree — a fact to report, not a question. To leave it, call `ExitWorktree`
+1. **Merge**, when the session can reach the main checkout. A
+   worktree-isolated session is refused any git against the main checkout by Claude Code
+   itself — `git -C` included — so never try it. The close-out reminder tells you the route:
+   - entered with `EnterWorktree` (branch **a** above): `ExitWorktree` with `action: "keep"`,
+     then in the main checkout confirm `git status --porcelain` prints nothing (**judge by
+     empty output, do not parse lines** — rtk rewrites this command) and the default branch is
+     checked out, then `git merge --no-ff <ticket-branch>`.
+   - launched inside a worktree (branches **b**/**c** after a checkbox start): hand the user
+     `cd {{MAIN}} && git merge --no-ff <ticket-branch>` instead.
+   If a precondition fails or a step is refused, never work around it — report it. On a
+   conflict, `merge --abort` and report. **Never push.**
+2. **Close** ticket {{REF}} using the **Resolve** convention in `docs/agents/issue-tracker.md`
+   (comment, close, any follow-up it requires) — **only if step 1 merged**. Never close a
+   ticket whose code is not merged.
+3. **Keep** the worktree — nothing to do. To leave it, call `ExitWorktree`
    with `action: "keep"`. When the harness prompts keep/remove on session exit, choose keep.
