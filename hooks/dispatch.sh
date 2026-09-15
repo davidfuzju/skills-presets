@@ -93,7 +93,7 @@ wt_ignored() {
   printf '%s' "${n:-0}"
 }
 
-wt_commits() {   # commits on HEAD that are not on the default branch
+default_branch() {   # e.g. "origin/main" or "main"; empty if undetermined
   local def
   def=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) || def=""
   if [ -z "$def" ]; then
@@ -101,6 +101,11 @@ wt_commits() {   # commits on HEAD that are not on the default branch
       git show-ref --verify --quiet "refs/heads/$b" && { def=$b; break; }
     done
   fi
+  printf '%s' "$def"
+}
+
+wt_commits() {   # commits on HEAD that are not on the default branch
+  local def; def=$(default_branch)
   [ -n "$def" ] || { echo unknown; return; }
   git rev-list --count "$def..HEAD" 2>/dev/null || echo unknown
 }
@@ -109,6 +114,21 @@ main_checkout() {
   local c; c=$(git rev-parse --git-common-dir 2>/dev/null) || return 0
   [ "$c" = ".git" ] && { git rev-parse --show-toplevel 2>/dev/null; return; }
   dirname "$c"
+}
+
+# Close-out preconditions for the auto-merge, measured here rather than left to
+# the model: the main checkout must be clean and sitting on the default branch.
+# "yes" only when both hold; anything undeterminable counts as not ready.
+main_ready() {   # $1 = main checkout path; prints "yes" or a reason
+  local m=$1 def br
+  [ -n "$m" ] && [ -d "$m" ] || { echo "main checkout not found"; return; }
+  def=$(default_branch); def=${def#origin/}
+  [ -n "$def" ] || { echo "default branch undetermined"; return; }
+  br=$(git -C "$m" symbolic-ref --quiet --short HEAD 2>/dev/null) || br="(detached)"
+  [ "$br" = "$def" ] || { echo "main checkout is on $br, not $def"; return; }
+  [ -z "$(git -C "$m" status --porcelain 2>/dev/null)" ] \
+    || { echo "main checkout has uncommitted changes"; return; }
+  echo yes
 }
 
 # --- preflight -------------------------------------------------------------
@@ -215,8 +235,11 @@ case "$MODE" in
     [ "$(jq -r .reminded "$GATE")" = true ] && exit 0    # remind once, never loop
     ref=$(jq -r .ref "$GATE"); kind=$(jq -r .tracker "$GATE"); pol=$(jq -r .policy "$GATE")
     jq '.reminded=true' "$GATE" > "$GATE.tmp" && mv "$GATE.tmp" "$GATE"
+    main=$(main_checkout); def=$(default_branch)
     inject Stop "$(render "$ROOT/policy/$pol/implement-closeout.md" \
-      '{{REF}}' "$ref" '{{TRACKER}}' "$kind")"
+      '{{REF}}' "$ref" '{{TRACKER}}' "$kind" '{{MAIN}}' "${main:-unknown}" \
+      '{{DEFAULT}}' "${def#origin/}" '{{BRANCH}}' "$(git branch --show-current 2>/dev/null)" \
+      '{{MAIN_READY}}' "$(main_ready "$main")")"
     ;;
 
   cleanup)

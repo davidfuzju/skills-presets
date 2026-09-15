@@ -34,7 +34,8 @@ own `docs/agents/issue-tracker.md`.
 | `--no-ff` merges | `PreToolUse:Bash` | gate + `updatedInput` rewrite | **hard** | this session, while a target runs |
 | Worktrees are kept | `PreToolUse:ExitWorktree` | gate + `deny` on `action:"remove"` | **hard** | this session, while a target runs |
 | Claim the ticket | preflight | point at the tracker file's **Claim** convention | advisory | this run |
-| Close on completion | `Stop` | point at the **Resolve** convention, present a checklist | advisory + human gate | this run |
+| Merge on completion | `Stop` | measure main-checkout readiness in the hook; merge without asking when ready | advisory, hook-measured preconditions | this run |
+| Close on completion | `Stop` | point at the **Resolve** convention; one confirmation before any tracker write | advisory + human gate | this run |
 
 The `--no-ff` and keep-worktree rules are hard because `updatedInput` and `deny` do not depend
 on the model cooperating. The rest are advisory because they require *tool calls* or *tracker
@@ -53,7 +54,7 @@ writes*, and a hook cannot perform either on the model's behalf.
        every Bash call   ──> hook fires, checks gate → open and it is a git merge → add --no-ff
        ExitWorktree      ──> hook fires, checks gate → open and action=remove → deny
 
-Stop            ──> inject the close-out checklist (once only)
+Stop            ──> measure main checkout, inject close-out (once only)
 SessionEnd      ──> rm the gate file                                     ← gate closes
 ```
 
@@ -85,7 +86,7 @@ These notes record *why*, not *what* — duplicating source into docs guarantees
 | `hooks/dispatch.sh` | all logic, ~130 lines |
 | `targets.json` | target registry: which skill invocation maps to which policy directory |
 | `policy/<target>/implement-preflight.md` | injected when the target is invoked |
-| `policy/<target>/implement-closeout.md` | the close-out checklist |
+| `policy/<target>/implement-closeout.md` | the close-out: auto-merge, confirm-then-close, keep |
 | `policy/<target>/no-tracker.md` | shown when the repo has no tracker configured |
 
 Everything under `policy/` is plain Markdown. Changing the rules is not a code change.
@@ -171,7 +172,7 @@ pattern for that reason:
 
 | Field | Matched against | Why it differs |
 | --- | --- | --- |
-| `match_prompt` | the user's raw prompt — free text | the bare word "implement" turns up constantly in ordinary requests, so only the slash-command form may count |
+| `match_prompt` | the user's raw prompt — free text | the bare word "implement" turns up constantly in ordinary requests, so only a slash command **at the start of the prompt** may count |
 | `match_skill` | `tool_input.skill` — a short controlled name | anchored exactly, e.g. `implement` or `mattpocock-skills:implement` |
 
 Sharing one pattern across both looks tidy and is wrong. A single
@@ -186,6 +187,17 @@ worktree and claim a ticket. Verified behaviour, not a hypothetical:
 | `please implement this function` | **opens** | no match |
 | `we should implement caching` | **opens** | no match |
 | `reimplemented it` | no match | no match |
+
+A second round tightened it further. The pattern still accepted `/implement` after any
+whitespace, so a prompt *discussing* the command — "the /implement command asks every time"
+— opened the gate too. A real slash-command invocation always sits at the start of the
+prompt, so the pattern is now anchored there (`^[[:space:]]*/…implement`):
+
+| Prompt | Before | After |
+| --- | --- | --- |
+| `/implement #11`, `  /implement 3` | opens | opens |
+| `the /implement command asks every time` | **opens** | no match |
+| `see /implement #11 docs` | **opens** | no match |
 
 The lesson generalises to any target added later: **anything matched against free-form user
 text must require a syntactically distinctive form**, not a keyword.
@@ -257,7 +269,39 @@ Detection uses `git rev-parse --git-common-dir` rather than a path glob: it retu
 `.git` in a main checkout and an absolute path to the main checkout's `.git` from inside any
 linked worktree, so worktrees created outside `.claude/worktrees/` are recognised too.
 
-### 6.6 Everything else
+### 6.6 What close-out does without asking
+
+The first release made the whole close-out a human gate: merge, close, keep — present all
+three, wait. In practice that asked the user to approve three very different things as if they
+carried the same risk, and one of them was not an action at all. They are now split by what a
+mistake would cost:
+
+| Step | Blast radius | Behaviour |
+| --- | --- | --- |
+| `--no-ff` merge into the main checkout | local only, undoable with `git reset` until pushed | **automatic** when preconditions hold; never pushes |
+| Close the ticket (comment, close, any follow-up the Resolve convention adds) | visible to others, cannot be unsent | **one confirmation** covering the whole bundle |
+| Keep the worktree | nothing happens; removal is already denied by hook | **reported**, not asked |
+
+The merge is only safe to automate if its preconditions are checked reliably, so they are
+**measured in the `Stop` hook** — main checkout clean, on the default branch — and injected as
+`Ready to merge: yes` or a concrete reason. The model re-checks right before merging, since
+state can move between the hook and the tool call. Anything undeterminable counts as not
+ready. On a conflict the policy is `merge --abort` and report, never resolve in the main
+checkout.
+
+Two things had to be said explicitly for automation to actually happen:
+
+- **The `git -C <main checkout> merge` is sanctioned.** A worktree session's environment tells
+  the model not to `cd` to the repository root. With the policy silent on it, a model reads
+  `git -C` as operating on the main checkout and refuses — observed, not hypothetical. The
+  policy now names this as the one main-checkout operation allowed, run from the worktree
+  directory.
+- **The `Stop` reminder can fire before the work is done** — the first stop may be a question
+  to the user. Previously harmless, since it only asked; with an automatic merge it is not. The
+  close-out therefore opens with "is the work actually finished?" and defers to the preflight
+  if not.
+
+### 6.7 Everything else
 
 | Item | Note |
 | --- | --- |

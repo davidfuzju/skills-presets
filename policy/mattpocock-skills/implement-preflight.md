@@ -94,16 +94,21 @@ ticket worktrees and does not apply to the leftover being cleaned up here.
 
 **4. Only then write code**, following the normal implement flow.
 
-### At close-out: stop, do not act unilaterally
+### At close-out
 
-After the full test suite and `/code-review`, do **not** merge or close on your own. Present
-this checklist and wait for the user to approve:
+Only once the full test suite passes and `/code-review` has run:
 
-1. `git -C <main-checkout> merge --no-ff <current-branch>`
-   Preconditions: the main checkout's `git status --porcelain` prints nothing, and it is on
-   the default branch. **Judge by whether the output is empty, do not parse individual lines**
-   (with the rtk proxy installed this command is rewritten to `rtk git status --porcelain`).
-   Report honestly if a precondition fails; never work around it.
-2. Close ticket {{REF}} using the **Resolve** convention in `docs/agents/issue-tracker.md`.
-3. **Keep** the worktree. To leave it, call `ExitWorktree` with `action: "keep"`. When the
-   harness prompts keep/remove on session exit, always choose keep.
+1. **Merge without asking**, if the preconditions hold:
+   `git -C {{MAIN}} merge --no-ff <current-branch>`
+   Preconditions: `git -C {{MAIN}} status --porcelain` prints nothing, and the main checkout
+   is on the default branch. **Judge by whether the output is empty, do not parse individual
+   lines** (with the rtk proxy installed this command is rewritten to
+   `rtk git status --porcelain`). If a precondition fails, report it and give the user the
+   command; never work around it. On a conflict, `merge --abort` and report. **Never push.**
+   This `git -C` merge is the one main-checkout operation this policy sanctions from a
+   worktree session — run it from the worktree directory, do not `cd` there.
+2. **Ask once, then close** ticket {{REF}}: show what the **Resolve** convention in
+   `docs/agents/issue-tracker.md` would do (comment, close, any follow-up it requires) and wait
+   for one yes. Tracker writes are visible to others and cannot be taken back.
+3. **Keep** the worktree — a fact to report, not a question. To leave it, call `ExitWorktree`
+   with `action: "keep"`. When the harness prompts keep/remove on session exit, choose keep.
