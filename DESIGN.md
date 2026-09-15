@@ -35,7 +35,7 @@ own `docs/agents/issue-tracker.md`.
 | Worktrees are kept | `PreToolUse:ExitWorktree` | gate + `deny` on `action:"remove"` | **hard** | this session, while a target runs |
 | Claim the ticket | preflight | point at the tracker file's **Claim** convention | advisory | this run |
 | Merge on completion | `Stop` | measure main-checkout readiness in the hook; merge without asking when ready | advisory, hook-measured preconditions | this run |
-| Close on completion | `Stop` | point at the **Resolve** convention; one confirmation before any tracker write | advisory + human gate | this run |
+| Close on completion | `Stop` | follow the **Resolve** convention automatically, only after a successful merge | advisory | this run |
 
 The `--no-ff` and keep-worktree rules are hard because `updatedInput` and `deny` do not depend
 on the model cooperating. The rest are advisory because they require *tool calls* or *tracker
@@ -86,7 +86,7 @@ These notes record *why*, not *what* — duplicating source into docs guarantees
 | `hooks/dispatch.sh` | all logic, ~130 lines |
 | `targets.json` | target registry: which skill invocation maps to which policy directory |
 | `policy/<target>/implement-preflight.md` | injected when the target is invoked |
-| `policy/<target>/implement-closeout.md` | the close-out: auto-merge, confirm-then-close, keep |
+| `policy/<target>/implement-closeout.md` | the close-out: merge, close, keep — automatic, failures reported with a fix |
 | `policy/<target>/no-tracker.md` | shown when the repo has no tracker configured |
 
 Everything under `policy/` is plain Markdown. Changing the rules is not a code change.
@@ -272,15 +272,22 @@ linked worktree, so worktrees created outside `.claude/worktrees/` are recognise
 ### 6.6 What close-out does without asking
 
 The first release made the whole close-out a human gate: merge, close, keep — present all
-three, wait. In practice that asked the user to approve three very different things as if they
-carried the same risk, and one of them was not an action at all. They are now split by what a
-mistake would cost:
+three, wait. The intermediate release automated only the merge and kept one confirmation
+before closing the ticket. The user's requirement is stricter and simpler: **when every step
+succeeds, all three happen with no question asked; when anything does not, the user is told
+what, why, and how to fix it.** The authorization is given once, as project policy, which is
+what the injected close-out says.
 
-| Step | Blast radius | Behaviour |
+| Step | Behaviour | Guard |
 | --- | --- | --- |
-| `--no-ff` merge into the main checkout | local only, undoable with `git reset` until pushed | **automatic** when preconditions hold; never pushes |
-| Close the ticket (comment, close, any follow-up the Resolve convention adds) | visible to others, cannot be unsent | **one confirmation** covering the whole bundle |
-| Keep the worktree | nothing happens; removal is already denied by hook | **reported**, not asked |
+| `--no-ff` merge into the main checkout | automatic; never pushes | hook-measured preconditions, re-checked before merging; conflict → `merge --abort` |
+| Close the ticket (Resolve convention in full) | automatic | **only after the merge succeeded** — a closed ticket with unmerged code is worse than an open one |
+| Keep the worktree | nothing to do | removal denied by hook; `ExitWorktree` uses `keep` |
+
+Steps run in order and stop at the first failure. The close-out ends with a summary and, only
+when something did not complete, a *Needs attention* section: the failure, the refusal or error
+verbatim, and a concrete fix with a paste-ready command — the policy lists the expected cases
+(checkbox-launched session, main checkout not ready, refusal, conflict, tracker error).
 
 The merge is only safe to automate if its preconditions are checked reliably, so they are
 **measured in the `Stop` hook** — main checkout clean, on the default branch — and injected as
@@ -289,17 +296,40 @@ state can move between the hook and the tool call. Anything undeterminable count
 ready. On a conflict the policy is `merge --abort` and report, never resolve in the main
 checkout.
 
-Two things had to be said explicitly for automation to actually happen:
+**The main checkout is out of reach from a worktree session — enforced, not advised.** The
+first version of this section read the worktree session's "do not `cd` to the repository root"
+note as soft guidance a model was being over-cautious about, and had the policy sanction
+`git -C <main checkout> merge`. That was wrong. From Claude Code `2.1.270` a worktree-isolated
+session is **refused by Claude Code itself** — no hook involved — on any git that targets the
+shared checkout. Observed on a real run, verbatim:
 
-- **The `git -C <main checkout> merge` is sanctioned.** A worktree session's environment tells
-  the model not to `cd` to the repository root. With the policy silent on it, a model reads
-  `git -C` as operating on the main checkout and refuses — observed, not hypothetical. The
-  policy now names this as the one main-checkout operation allowed, run from the worktree
-  directory.
-- **The `Stop` reminder can fire before the work is done** — the first stop may be a question
-  to the user. Previously harmless, since it only asked; with an automatic merge it is not. The
-  close-out therefore opens with "is the work actually finished?" and defers to the preflight
-  if not.
+> This session is isolated in the worktree …, but this command redirects git to the shared
+> checkout via -C. Refusing to run it — a worktree-isolated session's git operations must
+> target its own worktree.
+
+The same guard also refused `git -C <its own worktree> status` once rtk had rewritten it to
+`rtk git …`, because it cannot see past the launcher. So the policy now forbids any redirect
+outright rather than trying one.
+
+The only sanctioned way out is `ExitWorktree`, and it only works for a worktree the session
+*entered*. The hook records `started_in_wt` at the session's first preflight (later preflights
+never overwrite it) and picks the route at `Stop`:
+
+| Session shape | `started_in_wt` | In a worktree at `Stop` | Route |
+| --- | --- | --- | --- |
+| `/implement` created the worktree via `EnterWorktree` | `no` | yes | `exit-worktree`: `ExitWorktree keep` → re-check → plain `git merge --no-ff` |
+| Launched inside a worktree (the new-session checkbox) | `yes` | yes | `hand-to-user`: print `cd <main> && git merge --no-ff <branch>` |
+| Anything else | — | — | `hand-to-user` |
+
+`ExitWorktree` with `keep` also satisfies the keep-the-worktree rule, so nothing is traded
+away. **Not yet verified end to end:** that the isolation lifts once `ExitWorktree` returns.
+The policy is written so that if it does not, the step is refused, the model quotes the
+refusal and hands over the command — no worse than the `hand-to-user` route.
+
+**The `Stop` reminder can fire before the work is done** — the first stop may be a question
+to the user. Previously harmless, since it only asked; with an automatic merge it is not. The
+close-out therefore opens with "is the work actually finished?" and defers to the preflight
+if not.
 
 ### 6.7 Everything else
 
@@ -307,7 +337,7 @@ Two things had to be said explicitly for automation to actually happen:
 | --- | --- |
 | `additionalContext` size cap | 8000 characters (`systemMessage` 4000, `permissionDecisionReason` 2000) |
 | Hook process overhead | spawned on every Bash call, exits on the gate check |
-| Merging must run in the main checkout | the branch is occupied by the worktree, so `git -C <main-checkout> merge`, and the main checkout must be clean |
+| Merging must run in the main checkout | the branch is occupied by the worktree, and a worktree-isolated session cannot reach the main checkout — see §6.6 for the `ExitWorktree` route; the main checkout must be clean |
 | Repeat merges | keeping the worktree means later work merges again, still with `--no-ff` |
 | Upstream upgrades | this attaches at the tool layer, so upstream rewording is harmless; only a renamed *skill* requires editing `targets.json` |
 | Why not fork | the installed bundle lives at a versioned cache path and auto-updates, so edits are discarded on the next release |

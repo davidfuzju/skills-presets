@@ -4,36 +4,56 @@
 following has happened unless you did it.
 
 **First: is the work actually finished?** The full test suite passes and `/code-review` has
-run. If not — you stopped to ask a question, or hit a blocker — ignore everything below, do
-not merge, and carry on. This reminder does not fire again, so apply the close-out section of
-the preflight when the work is done.
+run. If not — you stopped to ask a question, or hit a blocker — ignore everything below and
+carry on. This reminder does not fire again, so apply the close-out section of the preflight
+when the work is done.
 
-### 1. Merge — do it, no confirmation needed
+**The user has authorized all three steps in advance. Do not ask for confirmation.** Run them
+in order; the moment one fails, stop there and go to *Report* — never skip ahead, never work
+around a failure.
 
-Measured just now: main checkout `{{MAIN}}`, default branch `{{DEFAULT}}`, current branch
-`{{BRANCH}}`. Ready to merge: **{{MAIN_READY}}**
+### 1. Merge
 
-- If that is `yes`, re-check right before merging (state may have moved since the hook ran):
-  `git -C {{MAIN}} status --porcelain` prints nothing and
-  `git -C {{MAIN}} branch --show-current` prints `{{DEFAULT}}`. Judge by whether the status
-  output is empty; do not parse lines. Then run
-  `git -C {{MAIN}} merge --no-ff {{BRANCH}}`.
-- If it is anything else, do not merge and do not work around it (no stash, no checkout, no
-  commit in the main checkout). Report the reason and the exact merge command for the user.
-- On a conflict: `git -C {{MAIN}} merge --abort`, report the conflicting files, stop. Do not
-  resolve conflicts in the main checkout on your own.
-- **Never push.** The merge stays local.
+Measured just now: main checkout `{{MAIN}}`, default branch `{{DEFAULT}}`, branch to merge
+`{{BRANCH}}`. Ready to merge: **{{MAIN_READY}}** — Route: **{{ROUTE}}**
 
-`git -C <main checkout> merge` is the one operation on the main checkout this policy
-sanctions from a worktree session. Run it from the worktree directory; do not `cd` there.
+A worktree-isolated session cannot run git against the main checkout: Claude Code itself
+refuses it. Never try `git -C`, `cd`, `--git-dir` or `GIT_DIR` — they are refused.
 
-### 2. Close the ticket — ask once
+**Route `exit-worktree`**, and Ready to merge is `yes`:
 
-Closing writes to the tracker, where other people see it and it cannot be taken back. Present
-exactly what you would do under the **Resolve** convention in `docs/agents/issue-tracker.md`
-for {{REF}} (the comment text, the close command, any follow-up that convention requires) and
-wait for one yes covering all of it. If the user already said not to close, simply acknowledge.
+1. `ExitWorktree` with `action: "keep"`. The session returns to the main checkout; the
+   worktree and its branch stay on disk.
+2. Re-check, since state may have moved: `git status --porcelain` prints nothing (judge by
+   empty output, do not parse lines) and `git branch --show-current` prints `{{DEFAULT}}`.
+3. `git merge --no-ff {{BRANCH}}` — plain, no `-C`. **Never push.**
+4. On a conflict: `git merge --abort` immediately, note the conflicting files, stop.
 
-### 3. The worktree is kept
+**Route `hand-to-user`**, or Ready to merge is anything but `yes`: do not merge. This is a
+failure for *Report*.
 
-Nothing to do or ask — removal is refused by hook. Mention it as a fact in your summary.
+### 2. Close the ticket — only if step 1 merged
+
+Follow the **Resolve** convention in `docs/agents/issue-tracker.md` for {{REF}} in full: the
+comment, the close, and any follow-up it requires. If the merge did not happen, do **not**
+close — a closed ticket with unmerged code is worse than an open one.
+
+### 3. Keep the worktree
+
+Already true: removal is refused by hook, and step 1 used `keep`. Nothing to do.
+
+### Report
+
+End with a short summary: what was merged (the merge commit), what was closed, that the
+worktree is kept. Then, **only if something did not complete**, a *Needs attention* section.
+For each item give: what failed, the refusal or error **verbatim**, why, and a concrete fix the
+user can act on — a paste-ready command where there is one. The usual cases:
+
+| Failure | Fix to offer |
+| --- | --- |
+| Route `hand-to-user` (session launched inside a worktree) | `cd {{MAIN}} && git merge --no-ff {{BRANCH}}`; then close the ticket (give the exact commands); next time leave the new-session worktree checkbox unchecked so this runs automatically |
+| Main checkout not ready | what is wrong (uncommitted changes / wrong branch) and how to clear it, then the merge command |
+| `ExitWorktree` or merge refused | the verbatim refusal, then the merge command to run by hand |
+| Merge conflict (aborted) | the files; resolve in the ticket worktree with `git merge {{DEFAULT}}`, re-run tests, then merge again |
+| Ticket close failed | the error (auth, permissions, unresolved ref) and the exact close commands to run |
+| Ticket left open because the merge did not happen | say so explicitly, with the close commands to run after merging |
