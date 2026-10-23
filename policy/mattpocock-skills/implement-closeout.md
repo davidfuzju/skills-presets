@@ -13,11 +13,17 @@ confirm `git status --porcelain` is empty (judge emptiness, not lines) and
 `git merge --abort`. Any other route or Ready value is a failure to report.
 
 **2. Close** {{REF}} by the Resolve convention in `docs/agents/issue-tracker.md` (comment,
-close, and its follow-ups) — only after step 1 merged.
+close, and its follow-ups) — only after step 1 merged, and only when the ticket is **done**:
+nothing in it is left for a human to perform. Re-read the ticket first. When it names
+**maintainer steps** still ahead (a deploy or push the human runs, post-deploy cleanup, a
+value only they can supply, anything marked HITL), keep it open: post the Resolve comment
+with those steps listed in order, hand it to the human role from
+`docs/agents/triage-labels.md`, and report it as left open, with the steps.
 
 **3. Keep** the worktree: already true.
 
-**Report.** Summarize the merge commit, the closed ticket, the kept worktree. If anything did
+**Report.** Summarize the merge commit, the ticket (closed, or left open with its maintainer
+steps), the kept worktree. If anything did
 not complete, add **Needs attention**: what failed, the error verbatim, and the fix.
 
 | Failure | Fix |

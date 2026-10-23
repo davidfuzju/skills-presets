@@ -24,7 +24,7 @@ Adding another third-party skill is a data change: append an entry to
 
 | Target | Enforces |
 | --- | --- |
-| `mattpocock-skills` `/implement` | a worktree per ticket, ticket claim, kept worktrees, and a close-out that merges (`--no-ff`) and closes the ticket automatically — anything that cannot complete is reported with a fix |
+| `mattpocock-skills` `/implement` | a worktree per ticket, ticket claim, kept worktrees, and a close-out that merges (`--no-ff`) and closes the ticket automatically (left open, handed to the human, when maintainer steps remain) — anything that cannot complete is reported with a fix |
 
 ## Two design rules
 
