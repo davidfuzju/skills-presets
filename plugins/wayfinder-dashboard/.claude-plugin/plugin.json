@@ -1,0 +1,28 @@
+{
+  "name": "wayfinder-dashboard",
+  "version": "0.1.0",
+  "description": "Live directed-graph dashboard for /mattpocock-skills:wayfinder maps, with before/after views of every change",
+  "author": {
+    "name": "David FU"
+  },
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "mod",
+    "wayfinder",
+    "dashboard",
+    "visualization",
+    "graph",
+    "mattpocock"
+  ],
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "localRoot": {
+      "type": "string",
+      "title": "Local tracker directory",
+      "default": ".scratch",
+      "description": "Directory under the repo root where a local-markdown tracker keeps its Wayfinder maps: <localRoot>/<effort>/map.md plus issues/NN-*.md. Matt's skills default to .scratch; some forks use .ai/wayfinder instead. Ignored for GitHub and GitLab trackers."
+    }
+  }
+}

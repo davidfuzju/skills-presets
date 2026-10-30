@@ -3,6 +3,13 @@
 A Claude Code plugin that enforces **your own workflow defaults on third-party skills you
 don't own** — without forking them.
 
+> This repository's marketplace ships **two plugins**. `skills-presets`, documented below, is
+> the preset layer. [`wayfinder-dashboard`](./plugins/wayfinder-dashboard) is a separate,
+> read-only mod that draws a live directed-graph view of `/mattpocock-skills:wayfinder` maps,
+> with before/after views of every change — see its
+> [README](./plugins/wayfinder-dashboard/README.md). They share nothing but this marketplace
+> and are installed independently.
+
 ## The problem
 
 Installed skill bundles are read-only, auto-updating, and versioned by path. Editing the
@@ -24,7 +31,7 @@ Adding another third-party skill is a data change: append an entry to
 
 | Target | Enforces |
 | --- | --- |
-| `mattpocock-skills` `/implement` | a worktree per ticket, ticket claim, kept worktrees, and a close-out that merges (`--no-ff`) and closes the ticket automatically — anything that cannot complete is reported with a fix |
+| `mattpocock-skills` `/implement` | a worktree per ticket, ticket claim, kept worktrees, and a close-out that merges (`--no-ff`) and closes the ticket automatically (left open, handed to the human, when maintainer steps remain) — anything that cannot complete is reported with a fix |
 
 ## Two design rules
 

@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wayfinder</title>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<style>
+  :root {
+    --bg: #f4f2ec; --panel: #fbfaf7; --ink: #1f1f1c; --muted: #77746c; --line: #dedad0;
+    --accent: #2f6fde; --add: #1e9e5a; --chg: #e08a00; --del: #d64545;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141412; --panel: #1b1b19; --ink: #ecebe6; --muted: #9b988f; --line: #33322e; --accent: #6d9cf0; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif; }
+  body { display: grid; grid-template-rows: auto 1fr; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line);
+    background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  button { font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); cursor: pointer; }
+  .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .status { margin-left: auto; color: var(--muted); font-size: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.live { background: var(--add); }
+  main { display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
+  #stage { position: relative; min-height: 0; }
+  #cy { position: absolute; inset: 0; }
+  #badges { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .badge { position: absolute; font-size: 11px; font-weight: 600; color: #fff; padding: 0 7px; line-height: 18px;
+    border-radius: 9px; white-space: nowrap; transform: translate(-100%, -50%); }
+  .badge.add { background: var(--add); } .badge.chg { background: var(--chg); } .badge.del { background: var(--del); }
+  .tools { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 6px; }
+  aside { border-left: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 14px 16px; }
+  aside h2 { font-size: 12px; letter-spacing: .04em; color: var(--muted); margin: 18px 0 8px; font-weight: 600; }
+  aside h2:first-child { margin-top: 0; }
+  .versions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow: auto; }
+  .versions li { padding: 5px 8px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .versions li:hover { background: var(--bg); }
+  .versions li[aria-current="true"] { background: var(--accent); color: #fff; }
+  .versions li[aria-current="true"] .count { color: #fff; }
+  .count { color: var(--muted); font-size: 12px; }
+  .changes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  .changes li::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 8px; background: var(--chg); }
+  .changes li.add::before { background: var(--add); } .changes li.del::before { background: var(--del); }
+  .empty { color: var(--muted); font-size: 13px; }
+  .detail h3 { margin: 0 0 4px; font-size: 15px; }
+  .detail .meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .detail p { margin: 0 0 10px; white-space: pre-wrap; }
+  .detail .label { color: var(--muted); font-size: 12px; }
+  .legend { color: var(--muted); font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; }
+  .legend .l-add::before { background: var(--add); } .legend .l-chg::before { background: var(--chg); } .legend .l-del::before { background: var(--del); }
+  #toast { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); background: var(--ink); color: var(--panel);
+    padding: 6px 14px; border-radius: 999px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 5; }
+  #toast.show { opacity: .92; }
+  #error { color: var(--del); }
+  #fatal { padding: 24px; color: var(--muted); }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } aside { border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Wayfinder</h1>
+  <div class="tabs" id="tabs"></div>
+  <div class="status"><span id="error"></span><span id="source"></span><span><span class="dot" id="dot"></span> <span id="live">连接中</span></span></div>
+</header>
+<main>
+  <div id="stage">
+    <div id="cy"></div>
+    <div id="badges"></div>
+    <div class="tools">
+      <button id="fit" title="适配窗口">适配</button>
+      <button id="replay" title="从变化前动画到变化后">▶ 重播变化</button>
+    </div>
+  </div>
+  <aside>
+    <h2>版本</h2>
+    <ul class="versions" id="versions"></ul>
+    <h2>这一版的变化</h2>
+    <ul class="changes" id="changes"></ul>
+    <h2>选中的节点</h2>
+    <div class="detail" id="detail"><div class="empty">点图上的节点看问题和决定。</div></div>
+    <h2>图例</h2>
+    <div class="legend">
+      <span class="l-add">新增的问题或依赖</span>
+      <span class="l-chg">状态变化（左侧色条是旧状态）、改名、改写</span>
+      <span class="l-del">删除的问题或依赖（留在原位，半透明）</span>
+    </div>
+  </aside>
+</main>
+<div id="toast"></div>
+<script>
+  const $ = (id) => document.getElementById(id)
+  const params = new URLSearchParams(location.search)
+  const state = { data: null, map: params.get('map'), index: null, selected: null, shown: null }
+
+  const fmt = (at) => {
+    const d = new Date(at)
+    const p = (n) => String(n).padStart(2, '0')
+    return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  }
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+  const toast = (msg) => {
+    $('toast').textContent = msg
+    $('toast').classList.add('show')
+    clearTimeout(toast.timer)
+    toast.timer = setTimeout(() => $('toast').classList.remove('show'), 2600)
+  }
+  /**
+   * Break into at most `lines` lines of about `max` px, CJK counting double.
+   * Cytoscape wraps only at spaces, so Chinese text is broken here.
+   */
+  const wrapLines = (text, max, lines) => {
+    const out = []
+    let line = ''
+    let width = 0
+    for (const ch of String(text).replace(/\s+/g, ' ').trim()) {
+      const w = /[⺀-￿]/.test(ch) ? 12.5 : 6.8
+      if (width + w > max) {
+        out.push(line)
+        if (out.length === lines) {
+          out[lines - 1] = out[lines - 1].slice(0, -1) + '…'
+          return out.join('\n')
+        }
+        line = ''
+        width = 0
+      }
+      line += ch
+      width += w
+    }
+    if (line) out.push(line)
+    return out.join('\n')
+  }
+
+  // ------------------------------------------------------------------ palette
+  const dark = matchMedia('(prefers-color-scheme: dark)')
+  const palette = () => dark.matches
+    ? { ink: '#ecebe6', muted: '#9b988f', edge: '#5a5850', story: '#3f3d38',
+        frontier: ['#20242c', '#6d9cf0'], blocked: ['#262622', '#4a4842'], claimed: ['#2c2618', '#d9a03a'],
+        resolved: ['#1d2a21', '#5fae7c'], 'out-of-scope': ['#22221f', '#4a4842'], story: ['#262622', '#4a4842'] }
+    : { ink: '#1f1f1c', muted: '#77746c', edge: '#b9b5aa', story: '#d4d0c5',
+        frontier: ['#ffffff', '#2f6fde'], blocked: ['#f1efe9', '#c3bfb3'], claimed: ['#fff6e2', '#c98a16'],
+        resolved: ['#e7f2ea', '#3a7d55'], 'out-of-scope': ['#f3f2ee', '#c3bfb3'], story: ['#efede6', '#c3bfb3'] }
+  const DIFF = { add: '#1e9e5a', chg: '#e08a00', del: '#d64545' }
+
+  function stylesheet() {
+    const P = palette()
+    const fill = (n) => (P[n.data('display')] ?? P.story)[0]
+    const border = (n) => (P[n.data('display')] ?? P.story)[1]
+    return [
+      { selector: 'node', style: {
+        shape: 'round-rectangle', width: 210, height: 64, 'background-color': fill, 'border-width': 1.5, 'border-color': border,
+        label: 'data(label)', 'text-wrap': 'wrap', 'text-max-width': 190, 'font-size': 12, 'line-height': 1.35,
+        'text-valign': 'center', 'text-halign': 'center', 'text-justification': 'left', color: P.ink, 'font-family': 'ui-sans-serif, system-ui, "PingFang SC", sans-serif',
+        'transition-property': 'background-color, border-color, border-width, opacity', 'transition-duration': '0.5s' } },
+      { selector: 'node[from]', style: {
+        'background-fill': 'linear-gradient', 'background-gradient-direction': 'to-right',
+        'background-gradient-stop-colors': (n) => `${P[n.data('from')][1]} ${P[n.data('from')][1]} ${fill(n)} ${fill(n)}`,
+        'background-gradient-stop-positions': '0% 4% 4% 100%' } },
+      { selector: 'node[display = "blocked"], node[display = "out-of-scope"]', style: { color: P.muted } },
+      { selector: 'node[display = "out-of-scope"], node[kind = "fog"]', style: { 'border-style': 'dashed' } },
+      { selector: 'node[kind = "start"], node[kind = "fog"], node[kind = "destination"]', style: { color: P.ink } },
+      { selector: 'node.add', style: { 'border-color': DIFF.add, 'border-width': 3.5 } },
+      { selector: 'node.chg', style: { 'border-color': DIFF.chg, 'border-width': 3.5 } },
+      { selector: 'node.del', style: { 'border-color': DIFF.del, 'border-width': 3, 'border-style': 'dashed', opacity: 0.4 } },
+      { selector: 'node:selected', style: { 'overlay-color': '#2f6fde', 'overlay-opacity': 0.12, 'overlay-padding': 6 } },
+      { selector: 'edge', style: {
+        width: 1.4, 'line-color': P.edge, 'target-arrow-color': P.edge, 'target-arrow-shape': 'triangle', 'arrow-scale': 0.9,
+        'curve-style': 'bezier', 'transition-property': 'line-color, target-arrow-color, opacity, width', 'transition-duration': '0.5s' } },
+      { selector: 'edge[kind = "story"]', style: { 'line-style': 'dashed', 'line-dash-pattern': [4, 4], 'line-color': P.story, 'target-arrow-color': P.story } },
+      { selector: 'edge.add', style: { 'line-color': DIFF.add, 'target-arrow-color': DIFF.add, width: 2.4 } },
+      { selector: 'edge.del', style: { 'line-color': DIFF.del, 'target-arrow-color': DIFF.del, 'line-style': 'dashed', opacity: 0.55 } },
+    ]
+  }
+
+  // ------------------------------------------------------------------ graph
+  if (window.cytoscapeDagre) cytoscape.use(cytoscapeDagre)
+  const cy = cytoscape({ container: $('cy'), style: stylesheet(), wheelSensitivity: 0.25, minZoom: 0.15, maxZoom: 3 })
+  dark.addEventListener('change', () => cy.style(stylesheet()))
+  window.addEventListener('resize', () => cy.resize())
+
+  const labelOf = (n) => `${wrapLines(n.title, 184, 2)}\n${n.sub}`
+  const element = (group, d) => ({ group, data: { ...d, label: group === 'nodes' ? labelOf(d) : undefined }, classes: d.diff ?? '' })
+
+  /** The before side of a version's merged graph: what the map looked like just before it. */
+  function beforeOf(graph) {
+    const nodes = graph.nodes
+      .filter((n) => n.diff !== 'add')
+      .map((n) => ({ ...n, diff: undefined, badge: undefined, display: n.from ?? n.display, from: undefined,
+        title: n.previous ?? n.title, sub: n.from ? n.sub.replace(/[^·]+$/, ' ' + LABEL[n.from]) : n.sub }))
+    const kept = new Set(nodes.map((n) => n.id))
+    const edges = graph.edges
+      .filter((e) => e.diff !== 'add' && kept.has(e.source) && kept.has(e.target))
+      .map((e) => ({ ...e, diff: undefined }))
+    return { nodes, edges }
+  }
+  const LABEL = { frontier: '可决', blocked: '被挡', claimed: '进行中', resolved: '已决', 'out-of-scope': '范围外' }
+
+  let layoutRun = null
+  /** Bring the canvas to `graph`, animating what changed when `animate`. */
+  function show(graph, { animate, fit }) {
+    // The container may have been laid out after Cytoscape measured it.
+    cy.resize()
+    const next = new Set([...graph.nodes, ...graph.edges].map((e) => e.id))
+    const gone = cy.elements().filter((e) => !next.has(e.id()))
+    if (animate) gone.animate({ style: { opacity: 0 } }, { duration: 350, complete: () => gone.remove() })
+    else gone.remove()
+
+    const fresh = []
+    cy.batch(() => {
+      for (const n of graph.nodes) {
+        const el = cy.getElementById(n.id)
+        if (el.nonempty()) {
+          // Drop what an earlier animation left inline (opacity, border width).
+          el.stop(true).removeStyle()
+          el.removeData('from previous badge diff')
+          el.data(element('nodes', n).data)
+          el.classes(n.diff ?? '')
+          continue
+        }
+        // A new ticket grows out of what it hangs on.
+        const parent = cy.getElementById(n.blockedBy?.[0] ?? '__start')
+        const added = cy.add({ ...element('nodes', n), position: parent.nonempty() ? { ...parent.position() } : { x: 0, y: 0 } })
+        fresh.push(added)
+      }
+      for (const e of graph.edges) {
+        const el = cy.getElementById(e.id)
+        if (el.nonempty()) {
+          el.stop(true).removeStyle()
+          el.removeData('diff')
+          el.data(e)
+          el.classes(e.diff ?? '')
+        } else {
+          fresh.push(cy.add(element('edges', e)))
+        }
+      }
+    })
+    if (animate) for (const el of fresh) el.style('opacity', 0)
+
+    layoutRun?.stop()
+    layoutRun = cy.layout({
+      name: window.cytoscapeDagre ? 'dagre' : 'breadthfirst', rankDir: 'TB', nodeSep: 36, rankSep: 64, edgeSep: 12,
+      animate, animationDuration: 600, animationEasing: 'ease-in-out-cubic', fit, padding: 40,
+      directed: true, roots: '#__start',
+    })
+    layoutRun.one('layoutstop', () => {
+      // The map grew past the viewport: ease out until all of it is in view.
+      const box = cy.elements().boundingBox()
+      const view = cy.extent()
+      if (!fit && (box.x1 < view.x1 || box.x2 > view.x2 || box.y1 < view.y1 || box.y2 > view.y2)) {
+        cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 450 })
+      }
+      for (const el of fresh) el.animate({ style: { opacity: el.hasClass('del') ? 0.4 : 1 } }, { duration: 450 })
+      if (animate) pulse()
+      placeBadges()
+    })
+    layoutRun.run()
+    if (!animate) for (const el of fresh) el.style('opacity', el.hasClass('del') ? 0.4 : 1)
+  }
+
+  function pulse() {
+    cy.nodes('.add, .chg, .del').forEach((n) => {
+      const width = n.hasClass('del') ? 3 : 3.5
+      n.animate({ style: { 'border-width': 9 } }, { duration: 220 })
+        .animate({ style: { 'border-width': width } }, { duration: 380 })
+        .animate({ style: { 'border-width': 9 } }, { duration: 220 })
+        .animate({ style: { 'border-width': width } }, { duration: 380 })
+    })
+  }
+
+  // Badges ride the nodes' top-right corners, as HTML over the canvas.
+  function placeBadges() {
+    const layer = $('badges')
+    const seen = new Set()
+    cy.nodes().forEach((n) => {
+      const text = n.data('badge')
+      if (!text) return
+      seen.add(n.id())
+      let el = layer.querySelector(`[data-for="${CSS.escape(n.id())}"]`)
+      if (!el) {
+        el = document.createElement('span')
+        el.dataset.for = n.id()
+        layer.append(el)
+      }
+      el.className = `badge ${n.data('diff')}`
+      el.textContent = text
+      const box = n.renderedBoundingBox({ includeLabels: false, includeOverlays: false })
+      el.style.left = `${box.x2 - 8}px`
+      el.style.top = `${box.y1 + 1}px`
+      el.style.opacity = String(n.style('opacity'))
+    })
+    for (const el of [...layer.children]) if (!seen.has(el.dataset.for)) el.remove()
+  }
+  cy.on('render viewport position', placeBadges)
+
+  cy.on('tap', 'node', (e) => {
+    state.selected = e.target.id()
+    renderDetail()
+  })
+  cy.on('tap', (e) => {
+    if (e.target === cy) {
+      state.selected = null
+      renderDetail()
+    }
+  })
+
+  // ------------------------------------------------------------------ panels
+  const currentMap = () => state.data?.maps.find((m) => m.key === state.map) ?? state.data?.maps[0]
+  const currentIndex = (map) => (state.index === null ? map.versions.length - 1 : Math.min(state.index, map.versions.length - 1))
+
+  function renderPanels() {
+    const data = state.data
+    $('source').textContent = data ? `来源：${data.tracker.label}${data.tracker.syncAt ? ' · 同步 ' + fmt(data.tracker.syncAt) : ''}` : ''
+    $('error').textContent = data?.tracker.error ? `读取失败：${data.tracker.error}` : ''
+    const map = currentMap()
+    $('tabs').innerHTML = (data?.maps ?? [])
+      .map((m) => `<button data-map="${esc(m.key)}" aria-pressed="${m === map}">${esc(m.label)}</button>`)
+      .join('')
+    if (!map) {
+      $('versions').innerHTML = ''
+      $('changes').innerHTML = '<div class="empty">还没有地图。用 /mattpocock-skills:wayfinder 开始找路。</div>'
+      return
+    }
+    const index = currentIndex(map)
+    const version = map.versions[index]
+    $('versions').innerHTML = map.versions
+      .map((v, i) => ({ v, i }))
+      .reverse()
+      .map(({ v, i }) => `<li data-index="${i}" aria-current="${i === index}"><span>第 ${i + 1} 版 · ${fmt(v.at)}</span><span class="count">${i === 0 ? '初版' : v.changes.length + ' 处'}</span></li>`)
+      .join('')
+    $('changes').innerHTML =
+      index === 0
+        ? '<div class="empty">这是记录到的第一版。</div>'
+        : version.changes.length === 0
+          ? '<div class="empty">只改了说明文字，图没有变。</div>'
+          : version.changes.map((c) => `<li class="${c.startsWith('+') ? 'add' : c.startsWith('−') ? 'del' : ''}">${esc(c.slice(2))}</li>`).join('')
+    renderDetail()
+  }
+
+  function renderDetail() {
+    const map = currentMap()
+    const n = map && state.selected ? map.versions[currentIndex(map)].graph.nodes.find((x) => x.id === state.selected) : null
+    if (!n) {
+      $('detail').innerHTML = '<div class="empty">点图上的节点看问题和决定。</div>'
+      return
+    }
+    $('detail').innerHTML = `<h3>${esc(n.title)}</h3>
+      <div class="meta">${esc(n.sub)}${n.blockedBy?.length ? ' · 依赖 ' + esc(n.blockedBy.join(', ')) : ''}${n.badge ? ' · ' + esc(n.badge) : ''}</div>
+      ${n.question ? `<div class="label">问题</div><p>${esc(n.question)}</p>` : ''}
+      ${n.answer ? `<div class="label">决定</div><p>${esc(n.answer)}</p>` : ''}
+      ${n.previous !== undefined ? `<div class="label">改动前</div><p>${esc(n.previous || '（空）')}</p>` : ''}`
+  }
+
+  /** Show the selected version: animate from its before side when `replay`. */
+  function showVersion({ animate, fit, replay }) {
+    const map = currentMap()
+    renderPanels()
+    if (!map) return
+    const index = currentIndex(map)
+    const graph = map.versions[index].graph
+    const key = `${map.key}@${index}`
+    if (replay && index > 0) {
+      show(beforeOf(graph), { animate: false, fit: false })
+      setTimeout(() => show(graph, { animate: true, fit: false }), 450)
+    } else {
+      show(graph, { animate: animate && state.shown?.startsWith(map.key + '@'), fit })
+    }
+    state.shown = key
+  }
+
+  $('tabs').addEventListener('click', (e) => {
+    const key = e.target.closest('button')?.dataset.map
+    if (!key || key === state.map) return
+    state.map = key
+    state.index = null
+    state.selected = null
+    history.replaceState(null, '', `?map=${encodeURIComponent(key)}`)
+    cy.elements().remove()
+    showVersion({ animate: false, fit: true })
+  })
+  $('versions').addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-index]')
+    if (!li) return
+    const map = currentMap()
+    const i = Number(li.dataset.index)
+    state.index = i === map.versions.length - 1 ? null : i
+    showVersion({ animate: true, fit: false })
+  })
+  window.addEventListener('keydown', (e) => {
+    const map = currentMap()
+    if (!map || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
+    const i = currentIndex(map) + (e.key === 'ArrowLeft' ? -1 : 1)
+    if (i < 0 || i >= map.versions.length) return
+    state.index = i === map.versions.length - 1 ? null : i
+    showVersion({ animate: true, fit: false })
+  })
+  $('fit').onclick = () => cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 350 })
+  $('replay').onclick = () => showVersion({ animate: true, fit: false, replay: true })
+
+  // ------------------------------------------------------------------ data
+  async function refresh(announce) {
+    const data = await (await fetch('/view.json', { cache: 'no-store' })).json()
+    const before = currentMap()
+    const lastBefore = before?.versions.at(-1)?.at
+    state.data = data
+    if (state.map === null) state.map = data.maps[0]?.key ?? null
+    const after = currentMap()
+    if (state.shown === null || !after || after.key !== before?.key) return showVersion({ animate: false, fit: true })
+    // Judged by the latest version's time, not the count: history is capped,
+    // so a full one gains a version and drops its oldest.
+    const grew = after.versions.at(-1)?.at !== lastBefore
+    if (!grew) return renderPanels()
+    if (state.index === null) {
+      if (announce) toast(`地图有新变化：第 ${after.versions.length} 版`)
+      showVersion({ animate: true, fit: false })
+    } else {
+      if (announce) toast('有新版本；点版本列表最上面一条查看')
+      renderPanels()
+    }
+  }
+
+  function connect() {
+    const events = new EventSource('/events')
+    events.onopen = () => {
+      $('dot').classList.add('live')
+      $('live').textContent = '实时'
+      refresh(false)
+    }
+    events.addEventListener('update', () => refresh(true))
+    events.onerror = () => {
+      $('dot').classList.remove('live')
+      $('live').textContent = '重连中'
+    }
+  }
+  connect()
+</script>
+</body>
+</html>

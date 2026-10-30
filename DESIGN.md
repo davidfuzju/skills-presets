@@ -35,7 +35,7 @@ own `docs/agents/issue-tracker.md`.
 | Worktrees are kept | `PreToolUse:ExitWorktree` | gate + `deny` on `action:"remove"` | **hard** | this session, while a target runs |
 | Claim the ticket | preflight | point at the tracker file's **Claim** convention | advisory | this run |
 | Merge on completion | `Stop` | measure main-checkout readiness in the hook; merge without asking when ready | advisory, hook-measured preconditions | this run |
-| Close on completion | `Stop` | follow the **Resolve** convention automatically, only after a successful merge | advisory | this run |
+| Close on completion | `Stop` | follow the **Resolve** convention automatically, only after a successful merge; tickets with maintainer steps left stay open | advisory | this run |
 
 The `--no-ff` and keep-worktree rules are hard because `updatedInput` and `deny` do not depend
 on the model cooperating. The rest are advisory because they require *tool calls* or *tracker
@@ -282,7 +282,7 @@ what the injected close-out says.
 | Step | Behaviour | Guard |
 | --- | --- | --- |
 | `--no-ff` merge into the main checkout | automatic; never pushes | hook-measured preconditions, re-checked before merging; conflict → `merge --abort` |
-| Close the ticket (Resolve convention in full) | automatic | **only after the merge succeeded** — a closed ticket with unmerged code is worse than an open one |
+| Close the ticket (Resolve convention in full) | automatic | **only after the merge succeeded** — a closed ticket with unmerged code is worse than an open one — **and only when no maintainer steps remain**: a ticket whose spec still has human-run work (a deploy the maintainer performs, post-deploy cleanup, a value only they hold) gets the Resolve comment listing those steps, the human triage role, and stays open |
 | Keep the worktree | nothing to do | removal denied by hook; `ExitWorktree` uses `keep` |
 
 Steps run in order and stop at the first failure. The close-out ends with a summary and, only
@@ -336,7 +336,7 @@ if not.
 
 | Item | Note |
 | --- | --- |
-| `additionalContext` size cap | 8000 characters (`systemMessage` 4000, `permissionDecisionReason` 2000). Injections are kept well under it: preflight ~1.2–2.3k depending on the worktree branch, close-out ~1.6k |
+| `additionalContext` size cap | 8000 characters (`systemMessage` 4000, `permissionDecisionReason` 2000). Injections are kept well under it: preflight ~1.2–2.3k depending on the worktree branch, close-out ~2.1k |
 | Hook process overhead | spawned on every Bash call, exits on the gate check |
 | Merging must run in the main checkout | the branch is occupied by the worktree, and a worktree-isolated session cannot reach the main checkout — see §6.6 for the `ExitWorktree` route; the main checkout must be clean |
 | Repeat merges | keeping the worktree means later work merges again, still with `--no-ff` |
