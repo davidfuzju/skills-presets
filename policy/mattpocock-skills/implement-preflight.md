@@ -14,12 +14,9 @@ tracker works; take every tracker command from it.
 Once the full test suite passes and `/code-review` has run, do all three — the user has
 authorized them in advance:
 
-1. **Merge** `--no-ff` into the default branch, from inside the main checkout, which must be
-   clean and on the default branch. This session reaches the main checkout only through
-   `ExitWorktree` with `action: "keep"`; Claude Code refuses any git redirected there (`-C`,
-   `cd`, `GIT_DIR`). Keep the merge local.
-2. **Close** the ticket by the Resolve convention, once the merge has landed.
-3. **Keep** the worktree (already enforced).
+{{LAND_STEP}}
+3. **Keep** the worktree; remove it only when the user asks, after its work has landed (the hook
+   refuses earlier).
 
 A close-out reminder with measured state and the route arrives when you stop. Stop at the
 first step that fails, and report it with the error verbatim and a paste-ready fix.

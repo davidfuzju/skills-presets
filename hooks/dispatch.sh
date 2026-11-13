@@ -63,6 +63,16 @@ tracker_kind() {
   esac
 }
 
+# How this repo lands work on its default branch, as its tracker doc declares
+# (rule B: the repo says, the hook only reads). A line
+#   **Merge route:** merge-request
+# means the default branch takes no direct merges: push the branch, open an MR/PR.
+# No line, or any other value, keeps the local --no-ff merge.
+merge_route() {
+  grep -qiE '^\*\*Merge route:\*\*[[:space:]]*merge-request' docs/agents/issue-tracker.md 2>/dev/null \
+    && echo merge-request || echo local
+}
+
 # Capture the raw reference only; resolving it is the model's job, because the
 # shape differs per tracker (#11 on GitHub, a path on the local markdown one).
 ticket_ref() {
@@ -131,6 +141,22 @@ main_ready() {   # $1 = main checkout path; prints "yes" or a reason
   echo yes
 }
 
+# Whether a ticket worktree may be removed: only once its work has landed.
+# $1 = worktree path. Prints "yes" or the reason it is kept. "Landed" = its
+# branch is an ancestor of the remote default branch as last fetched, and it has
+# no uncommitted changes. Gitignored files go with it (node_modules, build
+# output), so their count is reported, not judged.
+wt_removable() {
+  local w=$1 br def
+  [ -d "$w" ] || { echo "no worktree at $w"; return; }
+  [ -z "$(git -C "$w" status --porcelain 2>/dev/null)" ] || { echo "it has uncommitted changes"; return; }
+  br=$(git -C "$w" symbolic-ref --quiet --short HEAD 2>/dev/null) || { echo "it is on a detached HEAD"; return; }
+  def=$(git -C "$w" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) || def=origin/main
+  git -C "$w" merge-base --is-ancestor "$br" "$def" 2>/dev/null \
+    || { echo "branch $br is not in $def yet (git fetch first if it was merged remotely)"; return; }
+  echo yes
+}
+
 # --- preflight -------------------------------------------------------------
 
 preflight() { # $1=target JSON  $2=raw text  $3=hookEventName
@@ -178,6 +204,7 @@ preflight() { # $1=target JSON  $2=raw text  $3=hookEventName
   # the pairs that follow.
   inject "$evt" "$(render "$ROOT/policy/$pol/implement-preflight.md" \
     '{{WORKTREE_STEP}}' "$(cat "$ROOT/policy/$pol/$step.md")" \
+    '{{LAND_STEP}}' "$(cat "$ROOT/policy/$pol/land-$(merge_route).md")" \
     '{{REF}}' "${ref:-unresolved}" '{{TRACKER}}' "$kind" \
     '{{WT_NAME}}' "${wtname:-none}" \
     '{{WT_DIRTY}}' "$dirty" '{{WT_COMMITS}}' "$commits" '{{WT_IGNORED}}' "$ignored" \
@@ -215,10 +242,13 @@ case "$MODE" in
       tgt=${tgt%% *}
       case "$(basename "$tgt" 2>/dev/null)" in
         ticket-*)
-          jq -n --arg t "$tgt" \
-            '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",
-              permissionDecisionReason:("skills-presets: ticket worktrees are kept by policy. Refusing to remove " + $t + ".")}}'
-          exit 0 ;;
+          why=$(wt_removable "$tgt")
+          if [ "$why" != yes ]; then
+            jq -n --arg t "$tgt" --arg w "$why" \
+              '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",
+                permissionDecisionReason:("skills-presets: ticket worktrees are kept until their work has landed. Refusing to remove " + $t + ": " + $w + ".")}}'
+            exit 0
+          fi ;;
       esac
     fi
 
@@ -240,8 +270,10 @@ case "$MODE" in
   exitwt)
     [ -f "$GATE" ] || exit 0                    # rule A: never touch other sessions
     if [ "$(jq -r '.tool_input.action // ""' <<<"$IN")" = remove ]; then
-      jq -n '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",
-        permissionDecisionReason:"skills-presets: ticket worktrees are kept by policy. Use action:\"keep\"."}}'
+      why=$(wt_removable "$(git rev-parse --show-toplevel 2>/dev/null)")
+      [ "$why" = yes ] || jq -n --arg w "$why" \
+        '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",
+          permissionDecisionReason:("skills-presets: ticket worktrees are kept until their work has landed (" + $w + "). Use action:\"keep\".")}}'
     fi
     ;;
 
@@ -255,10 +287,13 @@ case "$MODE" in
     # checkout (`git -C` included) by Claude Code itself, not by a hook. The
     # only way out is ExitWorktree, which works only for a worktree the session
     # entered -- i.e. it started outside one and is inside one now.
+    # A merge-request repo never merges locally: the branch is pushed from where
+    # it is, so the worktree-isolation limits above do not apply.
     route=hand-to-user; branch=unknown
     if [ -n "$(worktree_name)" ]; then
       branch=$(git branch --show-current 2>/dev/null)
       [ "$(jq -r '.started_in_wt // "yes"' "$GATE")" = no ] && route=exit-worktree
+      [ "$(merge_route)" = merge-request ] && route=merge-request
     fi
     inject Stop "$(render "$ROOT/policy/$pol/implement-closeout.md" \
       '{{REF}}' "$ref" '{{TRACKER}}' "$kind" '{{MAIN}}' "${main:-unknown}" \

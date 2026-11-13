@@ -31,7 +31,7 @@ Adding another third-party skill is a data change: append an entry to
 
 | Target | Enforces |
 | --- | --- |
-| `mattpocock-skills` `/implement` | a worktree per ticket, ticket claim, kept worktrees, and a close-out that merges (`--no-ff`) and closes the ticket automatically (left open, handed to the human, when maintainer steps remain) — anything that cannot complete is reported with a fix |
+| `mattpocock-skills` `/implement` | a worktree per ticket, ticket claim, worktrees kept until their work lands, and a close-out that merges (`--no-ff`, or pushes and opens an MR/PR where the repo declares it) and closes the ticket automatically (left open, handed to the human, when maintainer steps remain) — anything that cannot complete is reported with a fix |
 
 ## Two design rules
 
@@ -83,6 +83,7 @@ change the rules; no code changes needed.
 | --- | --- |
 | `policy/<target>/implement-preflight.md` | the target skill is invoked |
 | `policy/<target>/worktree-*.md` | inside the preflight, only the branch matching the current worktree |
+| `policy/<target>/land-<route>.md` | inside the preflight: `land-merge-request.md` when the repo's `docs/agents/issue-tracker.md` has a `**Merge route:** merge-request` line (protected default branch), else `land-local.md` |
 | `policy/<target>/implement-closeout.md` | the run stops (once per run) |
 | `policy/<target>/no-tracker.md` | the repo has no tracker configured |
 

@@ -282,8 +282,9 @@ what the injected close-out says.
 | Step | Behaviour | Guard |
 | --- | --- | --- |
 | `--no-ff` merge into the main checkout | automatic; never pushes | hook-measured preconditions, re-checked before merging; conflict → `merge --abort` |
+| …or, in a repo whose tracker doc declares `**Merge route:** merge-request` | push the branch as `ticket/<id>-<slug>`, open an MR/PR; never merges locally | the declaration is the repo's own (rule B); the user merges, and the close waits for them |
 | Close the ticket (Resolve convention in full) | automatic | **only after the merge succeeded** — a closed ticket with unmerged code is worse than an open one — **and only when no maintainer steps remain**: a ticket whose spec still has human-run work (a deploy the maintainer performs, post-deploy cleanup, a value only they hold) gets the Resolve comment listing those steps, the human triage role, and stays open |
-| Keep the worktree | nothing to do | removal denied by hook; `ExitWorktree` uses `keep` |
+| Keep the worktree | nothing to do | removal denied by hook until the work has landed (branch in the remote default branch, worktree clean), then only on the user's request; `ExitWorktree` uses `keep` |
 
 Steps run in order and stop at the first failure. The close-out ends with a summary and, only
 when something did not complete, a *Needs attention* section: the failure, the refusal or error
@@ -320,6 +321,7 @@ never overwrite it) and picks the route at `Stop`:
 | --- | --- | --- | --- |
 | `/implement` created the worktree via `EnterWorktree` | `no` | yes | `exit-worktree`: `ExitWorktree keep` → re-check → plain `git merge --no-ff` |
 | Launched inside a worktree (the new-session checkbox) | `yes` | yes | `hand-to-user`: print `cd <main> && git merge --no-ff <branch>` |
+| Tracker doc declares `**Merge route:** merge-request` | any | yes | `merge-request`: push the branch from inside the worktree and open an MR/PR; isolation does not matter |
 | Anything else | — | — | `hand-to-user` |
 
 `ExitWorktree` with `keep` also satisfies the keep-the-worktree rule, so nothing is traded
